@@ -232,7 +232,7 @@ pre_install(){
     if check_sys sysRelease centos; then
         # Not support CentOS 5
         if centosversion 5; then
-            echo -e "[${red}Error${plain}] Not support CentOS 5, please change to CentOS 6+ and try again."
+            echo -e "[${red}Error${plain}] Not support CentOS 5, please change to CentOS 6 or 7 and try again."
             exit 1
         fi
     else
@@ -271,38 +271,72 @@ pre_install(){
     echo "---------------------------"
     echo
 
-    # Install EPEL repository
-    echo -e "[${green}Info${plain}] Installing EPEL repository..."
-    
-    # 针对 CentOS/RHEL 8 的 EPEL 安装
-    if [ -f /etc/redhat-release ]; then
-        OS_VERSION=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | cut -d'.' -f1)
-        if [ "$OS_VERSION" == "8" ]; then
-            dnf install -y epel-release
-            dnf config-manager --set-enabled PowerTools >/dev/null 2>&1 || \
-            dnf config-manager --set-enabled powertools >/dev/null 2>&1
-            echo -e "[${green}Info${plain}] PowerTools/powertools repository has been enabled."
-        else
-            yum install -y epel-release
-            if [ ! -f /etc/yum.repos.d/epel.repo ]; then
-                echo -e "[${red}Error${plain}] Install EPEL repository failed."
-                exit 1
-            fi
-            [ ! "$(command -v yum-config-manager)" ] && yum install -y yum-utils
-            if [ x"$(yum-config-manager epel | grep -w enabled | awk '{print $3}')" != x"True" ]; then
-                yum-config-manager --enable epel
-            fi
+    # Set shadowsocks-libev config port
+    while true
+    do
+    dport=$(shuf -i 9000-19999 -n 1)
+    echo -e "Please enter a port for shadowsocks-libev [1-65535]"
+    read -p "(Default port: ${dport}):" shadowsocksport
+    [ -z "$shadowsocksport" ] && shadowsocksport=${dport}
+    expr "${shadowsocksport}" + 1 &>/dev/null
+    if [ $? -eq 0 ]; then
+        if [ "${shadowsocksport}" -ge 1 ] && [ "${shadowsocksport}" -le 65535 ] && [ "${shadowsocksport:0:1}" != 0 ]; then
+            echo
+            echo "---------------------------"
+            echo "port = ${shadowsocksport}"
+            echo "---------------------------"
+            echo
+            break
         fi
     fi
-    
-    echo -e "[${green}Info${plain}] EPEL repository installation completed."
+    echo -e "[${red}Error${plain}] Please enter a correct number [1-65535]"
+    done
 
-    # Install necessary dependencies
-    if [ "$OS_VERSION" == "8" ]; then
-        dnf install -y wget unzip openssl openssl-devel gettext gcc autoconf libtool automake make asciidoc xmlto libev-devel pcre pcre-devel git c-ares-devel
-    else
-        yum install -y wget unzip openssl openssl-devel gettext gcc autoconf libtool automake make asciidoc xmlto libev-devel pcre pcre-devel git c-ares-devel
+    # Set shadowsocks config stream ciphers
+    while true
+    do
+    echo -e "Please select stream cipher for shadowsocks-libev:"
+    for ((i=1;i<=${#ciphers[@]};i++ )); do
+        hint="${ciphers[$i-1]}"
+        echo -e "${green}${i}${plain}) ${hint}"
+    done
+    read -p "Which cipher you'd select(Default: ${ciphers[0]}):" pick
+    [ -z "$pick" ] && pick=1
+    expr ${pick} + 1 &>/dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "[${red}Error${plain}] Please enter a number"
+        continue
     fi
+    if [[ "$pick" -lt 1 || "$pick" -gt ${#ciphers[@]} ]]; then
+        echo -e "[${red}Error${plain}] Please enter a number between 1 and ${#ciphers[@]}"
+        continue
+    fi
+    shadowsockscipher=${ciphers[$pick-1]}
+    echo
+    echo "---------------------------"
+    echo "cipher = ${shadowsockscipher}"
+    echo "---------------------------"
+    echo
+    break
+    done
+
+    echo
+    echo "Press any key to start...or press Ctrl+C to cancel"
+    char=$(get_char)
+    #Install necessary dependencies
+    #Install necessary dependencies
+    echo -e "[${green}Info${plain}] Checking the EPEL repository..."
+    if [ ! -f /etc/yum.repos.d/epel.repo ]; then
+        yum install -y -q epel-release
+    fi
+    [ ! -f /etc/yum.repos.d/epel.repo ] && echo -e "[${red}Error${plain}] Install EPEL repository failed, please check it." && exit 1
+    [ ! "$(command -v yum-config-manager)" ] && yum install -y -q yum-utils
+    #  修改此处，直接启用epel源
+    if ! yum-config-manager --enable epel &> /dev/null; then
+        echo -e "[${red}Error${plain}] Enable EPEL repository failed, please check it." && exit 1
+    fi
+    echo -e "[${green}Info${plain}] Checking the EPEL repository complete..."
+    yum install -y -q unzip openssl openssl-devel gettext gcc autoconf libtool automake make asciidoc xmlto libev-devel pcre pcre-devel git c-ares-devel
 }
 
 download() {
